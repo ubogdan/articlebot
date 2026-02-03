@@ -1,0 +1,13 @@
+{
+  "ai_provider": "claude",
+  "openai_api_key": "your-openai-api-key-here",
+  "claude_api_key": "your-openai-api-key-here",
+  "openai_model": "gpt-4o-mini",
+  "claude_model": "claude-sonnet-4-20250514",
+  "temperature": 0.7,
+  "max_tokens": 8000,
+  "output_dir": "content/posts",
+  "articles_per_day": 1,
+  "generation_interval_hours": 8,
+  "auto_publish": false
+}

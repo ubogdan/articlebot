@@ -1,0 +1,78 @@
+{
+  "min_word_count": 400,
+  "max_word_count": 4000,
+  "required_front_matter": [
+    "title",
+    "date",
+    "description",
+    "tags",
+    "categories"
+  ],
+  "required_sections": [],
+  "common_typos": {
+    "teh": "the",
+    "taht": "that",
+    "recieve": "receive",
+    "occured": "occurred",
+    "seperate": "separate",
+    "definately": "definitely",
+    "alot": "a lot",
+    "preview settings": "previous settings",
+    "preview screen": "previous screen",
+    "preview": "previous",
+    "allot": "a lot",
+    "cant": "can't",
+    "wont": "won't",
+    "dont": "don't",
+    "doesnt": "doesn't",
+    "isnt": "isn't"
+  },
+  "code_typos": {
+    "vars.": "var.",
+    "other-confi:": "other-config:",
+    "lsoff": "lsof",
+    "fucn": "func",
+    "funcion": "func",
+    "reutrn": "return",
+    "retrun": "return",
+    "stirng": "string",
+    "strign": "string",
+    "interfce": "interface",
+    "strcut": "struct",
+    "pakage": "package",
+    "improt": "import",
+    "ipmort": "import",
+    "resoruce": "resource",
+    "provder": "provider",
+    "varialbe": "variable",
+    "grpe": "grep",
+    "ehco": "echo",
+    "mkidr": "mkdir",
+    "chmdo": "chmod"
+  },
+  "outdated_patterns": [
+    {
+      "pattern": "version\\s*=\\s*\"~>\\s*3\\.0\"",
+      "replacement": "version = \"~> 5.0\"",
+      "message": "AWS provider 3.x is outdated, consider upgrading to 5.x"
+    },
+    {
+      "pattern": "required_version\\s*=\\s*\">= 0\\.14\"",
+      "replacement": "required_version = \">= 1.5\"",
+      "message": "Terraform 0.14 is outdated, minimum should be 1.5+"
+    },
+    {
+      "pattern": "Go 1\\.(1[0-9]|20)\\+",
+      "message": "Consider updating Go version references to 1.21+"
+    }
+  ],
+  "internal_link_prefix": "/",
+  "valid_languages": [
+    "go", "golang", "bash", "sh", "shell", "python", "py",
+    "javascript", "js", "typescript", "ts", "json", "yaml", "yml",
+    "terraform", "tf", "hcl", "sql", "html", "css", "markdown", "md",
+    "dockerfile", "docker", "nginx", "apache", "xml", "toml", "ini",
+    "ruby", "rb", "rust", "rs", "java", "kotlin", "swift", "c", "cpp",
+    "powershell", "ps1", "vim", "diff", "plaintext", "text"
+  ]
+}

@@ -19,7 +19,7 @@ func main() {
 	verbose := flag.Bool("verbose", false, "Show detailed output")
 	outputFormat := flag.String("format", "text", "Output format: text, json, markdown")
 	singleFile := flag.String("file", "", "Analyze a single file instead of directory")
-	configFile := flag.String("config", "", "Path to config file (optional)")
+	configFile := flag.String("linter", "", "Path to config file (optional)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Article Bot - Hugo Markdown Linter & Fixer\n\n")

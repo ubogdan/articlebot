@@ -66,7 +66,7 @@ func NewClaudeAI(apiKey string, opts ...func(ai *Config)) *ClaudeAI {
 func (ai *ClaudeAI) defaultConfig(apiKey string) {
 	ai.config = Config{
 		apiKey:      apiKey,
-		model:       "claude-sonnet-4-20250514",
+		model:       "claude-3-5-sonnet-20241022",
 		maxTokens:   4000,
 		temperature: 0.7,
 	}
@@ -90,8 +90,13 @@ func (ai *ClaudeAI) Call(prompt, message string) (string, error) {
 		Messages: []ClaudeMessage{
 			{Role: "user", Content: message},
 		},
-		Temperature: ai.config.temperature,
 		System:      prompt,
+	}
+
+	// Only include temperature for models that support it
+	// claude-3-5-sonnet-20241022 and newer models don't support temperature parameter
+	if !isNewerClaudeModel(ai.config.model) {
+		reqBody.Temperature = ai.config.temperature
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -138,4 +143,9 @@ func (ai *ClaudeAI) Call(prompt, message string) (string, error) {
 		claudeResp.Usage.InputTokens+claudeResp.Usage.OutputTokens)
 
 	return claudeResp.Content[0].Text, nil
+}
+
+// isNewerClaudeModel checks if the model is newer than claude-3-5-sonnet-20241022
+func isNewerClaudeModel(model string) bool {
+	return model >= "claude-3-5-sonnet-20241022"
 }

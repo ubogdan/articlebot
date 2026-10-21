@@ -79,10 +79,10 @@ func main() {
 	} else {
 		printHelp()
 		//log.Println("")
-		log.Println("🚀 Generating initial batch of articles...")
+		//log.Println("🚀 Generating initial batch of articles...")
 		//gen.generateArticles(1)
 
-		fixArticle(gen)
+		//fixArticle(gen)
 	}
 }
 

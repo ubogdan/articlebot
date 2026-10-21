@@ -145,7 +145,7 @@ Target Domains: %s
 
 Requirements:
 1. Topics should be:
-   - Current and relevant to 2025 trends
+   - Current and relevant to 2026 trends
    - Practical and implementable
    - Appeal to developers and DevOps engineers
    - Cover different difficulty levels (Beginner, Intermediate, Advanced)

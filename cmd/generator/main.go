@@ -62,8 +62,12 @@ func main() {
 			// Generate new topics with AI
 			domains := []string{"Go Development", "DevOps", "SRE", "SecOps"}
 			if len(os.Args) > 2 {
-				// Allow custom domains from command line
-				domains = os.Args[2:]
+				// Ignore CLI flags like --save/--no-save/--dry-run and treat the remaining
+				// positional arguments as custom topic domains.
+				domains = filterTopicDomains(os.Args[2:])
+				if len(domains) == 0 {
+					domains = []string{"Go Development", "DevOps", "SRE", "SecOps"}
+				}
 			}
 			if err := gen.generateTopicsWithAI(domains, 10); err != nil {
 				logError("topics", "Error generating topics: %v", err)

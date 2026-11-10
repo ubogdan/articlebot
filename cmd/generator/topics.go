@@ -209,20 +209,40 @@ func extractJSONFromMarkdown(text string) string {
 	return text
 }
 
+func filterTopicDomains(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		switch strings.ToLower(arg) {
+		case "--save", "--no-save", "--dry-run":
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if strings.TrimSpace(arg) == "" {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
+}
+
 func shouldSaveTopics() bool {
-	if len(os.Args) > 2 {
-		for _, arg := range os.Args[2:] {
-			switch strings.ToLower(arg) {
-			case "--save":
-				return true
-			case "--no-save", "--dry-run":
-				return false
-			}
+	args := os.Args[2:]
+	for _, arg := range args {
+		switch strings.ToLower(arg) {
+		case "--save":
+			return true
+		case "--no-save", "--dry-run":
+			return false
 		}
 	}
 
 	if fileInfo, err := os.Stdin.Stat(); err == nil && (fileInfo.Mode()&os.ModeCharDevice) == 0 {
-		return false
+		// In non-interactive contexts, default to saving instead of silently discarding
+		// generated topics. This keeps automation predictable while still honoring
+		// explicit --no-save/--dry-run overrides.
+		return true
 	}
 
 	log.Println("💾 Save these topics to topics.json? (y/n)")

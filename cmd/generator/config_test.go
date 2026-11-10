@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -165,5 +166,13 @@ func TestShouldSaveTopicsArgs(t *testing.T) {
 	os.Args = []string{"articlebot", "topics", "--no-save"}
 	if shouldSaveTopics() {
 		t.Fatal("expected --no-save to disable saving")
+	}
+
+	os.Args = []string{"articlebot", "topics", "--save", "Platform Engineering", "Kubernetes"}
+	if !shouldSaveTopics() {
+		t.Fatal("expected --save to remain enabled when domain args are present")
+	}
+	if got := filterTopicDomains(os.Args[2:]); !reflect.DeepEqual(got, []string{"Platform Engineering", "Kubernetes"}) {
+		t.Fatalf("filterTopicDomains() = %#v, want %#v", got, []string{"Platform Engineering", "Kubernetes"})
 	}
 }

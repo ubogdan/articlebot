@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
 )
+
+const topicGenerationSystemPrompt = `You are a technical editor planning articles across the assigned domains.
+Treat each topic's assigned domain independently and use tools and languages appropriate to that domain.
+Do not make every domain about Go or force programming-language connections onto operational topics.
+Return only valid JSON, not a markdown article.`
 
 // Topic represents a technical topic
 type Topic struct {
@@ -20,6 +26,11 @@ type Topic struct {
 
 // generateTopicsWithAI uses AI to generate new article topics
 func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount int) error {
+	assignedDomains, err := selectTopicDomains(domains, topicCount)
+	if err != nil {
+		return err
+	}
+
 	log.Println("🎨 Generating new article topics with AI...")
 	log.Printf("   Domains: %s", strings.Join(domains, ", "))
 	log.Println("")
@@ -29,17 +40,14 @@ func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount in
 	log.Println("")
 
 	// Build the prompt for topic generation
-	prompt := ag.buildTopicGenerationPrompt(domains, topicCount)
-
-	var response string
-	var err error
+	prompt := ag.buildTopicGenerationPrompt(assignedDomains)
 
 	aiAgent, err := ag.config.Provider(provider)
 	if err != nil {
 		return err
 	}
 
-	response, err = aiAgent.Call(ag.getSystemPrompt(), prompt)
+	response, err := aiAgent.Call(topicGenerationSystemPrompt, prompt)
 	if err != nil {
 		return err
 	}
@@ -57,8 +65,8 @@ func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount in
 		}
 	}
 
-	if len(generatedTopics.Topics) == 0 {
-		return fmt.Errorf("no topics generated")
+	if err := validateTopicAssignments(generatedTopics.Topics, assignedDomains); err != nil {
+		return err
 	}
 
 	log.Printf("✅ Generated %d new topics!", len(generatedTopics.Topics))
@@ -132,29 +140,68 @@ func (ag *ArticleGenerator) saveGeneratedTopics(topics []Topic) error {
 	return os.WriteFile(TopicsFilename, data, 0644)
 }
 
-// buildTopicGenerationPrompt creates a prompt for generating new topics
-func (ag *ArticleGenerator) buildTopicGenerationPrompt(domains []string, topics int) string {
-	return fmt.Sprintf(`Generate 10 innovative and trending article topics for technical blog posts.
+func selectTopicDomains(domains []string, count int) ([]string, error) {
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("at least one topic domain is required")
+	}
+	if count <= 0 {
+		return nil, fmt.Errorf("topic count must be greater than 0")
+	}
+	for _, domain := range domains {
+		if strings.TrimSpace(domain) == "" {
+			return nil, fmt.Errorf("topic domains must not be empty")
+		}
+	}
+	assigned := make([]string, count)
+	for i := range assigned {
+		assigned[i] = domains[rand.Intn(len(domains))]
+	}
+	return assigned, nil
+}
 
-Target Domains: %s
+func validateTopicAssignments(topics []Topic, assignedDomains []string) error {
+	if len(topics) != len(assignedDomains) {
+		return fmt.Errorf("expected %d topics, received %d", len(assignedDomains), len(topics))
+	}
+	for i, topic := range topics {
+		if topic.Category != assignedDomains[i] {
+			return fmt.Errorf("topic %d category %q does not match assigned domain %q", i+1, topic.Category, assignedDomains[i])
+		}
+	}
+	return nil
+}
+
+// buildTopicGenerationPrompt creates a prompt for preassigned topic domains.
+func (ag *ArticleGenerator) buildTopicGenerationPrompt(assignedDomains []string) string {
+	var assignments strings.Builder
+	for i, domain := range assignedDomains {
+		fmt.Fprintf(&assignments, "%d. %s\n", i+1, domain)
+	}
+	return fmt.Sprintf(`Generate exactly %d innovative and trending article topics for technical blog posts.
+
+Domain assignments (one topic per entry, in this exact order):
+%s
 
 Requirements:
 1. Topics should be:
-   - Current and relevant to 2026 trends
+   - Current and relevant to %d trends
    - Practical and implementable
    - Appeal to developers and DevOps engineers
    - Cover different difficulty levels (Beginner, Intermediate, Advanced)
-   - Focus on Go programming language where applicable
+   - Centered on their assigned domain, not a shared programming language
+   - Go-focused only when assigned Go Development or another explicitly Go-focused domain
+   - For DevOps, SRE, and SecOps, focus on domain-native tools, workflows, infrastructure,
+     reliability, or security without forcing Go implementations
 
 2. For each topic, provide:
    - Title: Clear, engaging, and SEO-friendly
-   - Category: One of [%s]
+   - Category: Copy the assigned domain exactly for that topic's position
    - Keywords: 4-6 relevant keywords (lowercase, hyphenated)
    - Difficulty: Beginner, Intermediate, or Advanced
    - Description: 1-2 sentence description of what readers will learn
 
 3. Topics should cover trending areas like:
-   - AI/ML integration with Go
+   - AI/ML operations and deployment
    - Cloud-native development
    - Observability and monitoring
    - Security best practices
@@ -177,10 +224,11 @@ Requirements:
   ]
 }
 
-Generate %d diverse and innovative topics now:`,
-		strings.Join(domains, ", "),
-		strings.Join(domains, ", "),
-		topics,
+Generate exactly %d diverse and innovative topics now, preserving the assigned categories and order:`,
+		len(assignedDomains),
+		assignments.String(),
+		time.Now().Year(),
+		len(assignedDomains),
 	)
 }
 

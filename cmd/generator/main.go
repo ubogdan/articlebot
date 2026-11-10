@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -60,13 +61,28 @@ func newApp() *cli.App {
 				Name:      "generate",
 				Usage:     "Generate N articles",
 				ArgsUsage: "[N]",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "title", Usage: "Generate one article with an exact title from topics.json"},
+				},
 				Action: func(c *cli.Context) error {
+					if c.IsSet("title") {
+						if strings.TrimSpace(c.String("title")) == "" {
+							return fmt.Errorf("--title must not be empty")
+						}
+						if c.Args().Len() > 0 {
+							return fmt.Errorf("--title generates one article and cannot be combined with an article count")
+						}
+					}
 					gen, err := loadGeneratorForCommand(c)
 					if err != nil {
 						return err
 					}
 					if gen == nil {
 						return nil
+					}
+
+					if c.IsSet("title") {
+						return gen.generateArticleByTitle(c.String("title"))
 					}
 
 					count := 1
@@ -227,6 +243,7 @@ func printHelp() {
 	log.Println("   articlebot test                 - Test API connections")
 	log.Println("   articlebot daemon              - Run continuously")
 	log.Println("   articlebot generate [N]        - Generate N articles")
+	log.Println("   articlebot generate --title \"Exact topic title\" - Generate a matching topic")
 	log.Println("   articlebot topics [domain...]  - Generate topic ideas")
 	log.Println("   articlebot topics --save       - Save output to topics.json")
 	log.Println("   articlebot topics --no-save    - Skip saving")
@@ -321,25 +338,15 @@ func (ag *ArticleGenerator) generateArticles(count int) {
 
 	log.Printf("📚 Generating batch of %d articles...", count)
 	for i := 0; i < count; i++ {
-		provider := ag.selectProvider()
 		topic := ag.selectUnusedTopic()
 
 		log.Printf("🎯 [%d/%d] Topic: %s", i+1, count, topic.Title)
-		log.Printf("   Using: %s", provider)
-
-		aiAgent, err := ag.config.Provider(provider)
-		if err != nil {
-			log.Printf("❌ Error selecting AI provider: %v", err)
-			continue
-		}
-
-		article, err := ag.generateArticleWithAI(aiAgent, topic)
+		filename, err := ag.generateTopicArticle(topic)
 		if err != nil {
 			log.Printf("❌ Error generating article: %v", err)
 			continue
 		}
 
-		filename := article.Save(ag.config.OutputDir)
 		if filename != "" {
 			log.Printf("✅ [%d/%d] Saved: %s", i+1, count, filepath.Base(filename))
 		}
@@ -351,6 +358,43 @@ func (ag *ArticleGenerator) generateArticles(count int) {
 	}
 
 	log.Println("✨ Batch generation complete!")
+}
+
+func (ag *ArticleGenerator) generateArticleByTitle(title string) error {
+	topics, err := ag.loadTopics()
+	if err != nil {
+		return fmt.Errorf("load %s: %w", TopicsFilename, err)
+	}
+	for _, topic := range topics {
+		if topic.Title == title {
+			log.Printf("Generating article for topic: %s", topic.Title)
+			filename, err := ag.generateTopicArticle(topic)
+			if err != nil {
+				return err
+			}
+			log.Printf("Saved: %s", filepath.Base(filename))
+			return nil
+		}
+	}
+	return fmt.Errorf("topic title %q not found in %s", title, TopicsFilename)
+}
+
+func (ag *ArticleGenerator) generateTopicArticle(topic Topic) (string, error) {
+	provider := ag.selectProvider()
+	log.Printf("   Using: %s", provider)
+	aiAgent, err := ag.config.Provider(provider)
+	if err != nil {
+		return "", fmt.Errorf("select AI provider: %w", err)
+	}
+	article, err := ag.generateArticleWithAI(aiAgent, topic)
+	if err != nil {
+		return "", fmt.Errorf("generate article: %w", err)
+	}
+	filename := article.Save(ag.config.OutputDir)
+	if filename == "" {
+		return "", fmt.Errorf("failed to save article %q to %s", topic.Title, ag.config.OutputDir)
+	}
+	return filename, nil
 }
 
 // selectUnusedTopic selects a topic that hasn't been used recently

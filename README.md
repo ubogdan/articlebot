@@ -42,6 +42,17 @@ The override does not modify `config.json`; the selected provider must have vali
 configuration. Without the flag, the configured provider is unchanged.
 The `test` command still checks all configured API connections.
 
+Generate a specific topic using its exact, case-sensitive title in `topics.json`:
+
+```bash
+go run ./cmd/generator --provider ollama generate --title "Your topic title"
+```
+
+`--title` generates one article using the topic's saved metadata and the normal
+generation and Hugo output flow. It cannot be combined with an article count.
+A missing title or unreadable topics file produces an error; no random topic is
+substituted. Without `--title`, random topic selection is unchanged.
+
 For Ollama, omitted `ollama_host` and `ollama_model` settings default to
 `http://localhost:11434` and `llama2`. Set them in `config.json`, or use
 `OLLAMA_HOST` and `OLLAMA_MODEL` to override them. The model must already be
@@ -50,6 +61,18 @@ installed in Ollama:
 ```bash
 OLLAMA_MODEL=llama3.2 go run ./cmd/generator --provider ollama generate 1
 ```
+
+The `topics` command independently selects a random domain for each of its 10
+topics, using Go Development, DevOps, SRE, and SecOps by default. Supply positional
+domains to use a different pool:
+
+```bash
+go run ./cmd/generator topics --save "DevOps" "SRE" "SecOps"
+```
+
+Random selection does not guarantee equal coverage. The AI receives an explicit
+domain assignment per topic, without a blanket Go-language preference. Responses
+with the wrong count or mismatched categories are rejected before saving.
 
 ### Basic Analysis
 

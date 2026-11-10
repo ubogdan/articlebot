@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 )
 
@@ -34,7 +33,6 @@ func (ag *ArticleGenerator) generateArticleWithAI(provider Provider, topic Topic
 		log.Println("      ✅ Continuation received")
 		content = content + continuation
 	}
-	os.WriteFile("article.md", []byte(content), 0644)
 	// Add Hugo front matter
 	return NewFrontMatter(topic, content, !ag.config.AutoPublish), nil
 }

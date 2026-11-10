@@ -63,6 +63,45 @@ func (c Config) Provider(provider AIProvider) (Provider, error) {
 	return nil, fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'random', or 'alternate')", c.AIProvider)
 }
 
+// Validate checks the runtime configuration for invalid or unsafe values.
+func (c Config) Validate() error {
+	if c.OutputDir == "" {
+		return fmt.Errorf("output_dir is required")
+	}
+	if c.ArticlesPerDay <= 0 {
+		return fmt.Errorf("articles_per_day must be greater than 0")
+	}
+	if c.GenerationInterval <= 0 {
+		return fmt.Errorf("generation_interval_hours must be greater than 0")
+	}
+	if c.MaxTokens <= 0 {
+		return fmt.Errorf("max_tokens must be greater than 0")
+	}
+	if c.Temperature < 0 || c.Temperature > 2 {
+		return fmt.Errorf("temperature must be between 0 and 2")
+	}
+
+	switch AIProvider(c.AIProvider) {
+	case ProviderOpenAI:
+		if c.OpenAIAPIKey == "" || c.OpenAIAPIKey == "your-openai-api-key-here" {
+			return fmt.Errorf("OpenAI API key not configured")
+		}
+	case ProviderClaude:
+		if c.ClaudeAPIKey == "" || c.ClaudeAPIKey == "your-claude-api-key-here" {
+			return fmt.Errorf("Claude API key not configured")
+		}
+	case ProviderRandom, ProviderAlternate:
+		if (c.OpenAIAPIKey == "" || c.OpenAIAPIKey == "your-openai-api-key-here") &&
+			(c.ClaudeAPIKey == "" || c.ClaudeAPIKey == "your-claude-api-key-here") {
+			return fmt.Errorf("at least one API key must be configured for random/alternate mode")
+		}
+	default:
+		return fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'random', or 'alternate')", c.AIProvider)
+	}
+
+	return nil
+}
+
 // getDefaultConfig returns default configuration
 func getDefaultConfig() Config {
 	return Config{
@@ -136,23 +175,5 @@ func (ag *ArticleGenerator) createDefaultConfig() {
 
 // validateConfig checks if the configuration is valid
 func (ag *ArticleGenerator) validateConfig() error {
-	switch AIProvider(ag.config.AIProvider) {
-	case ProviderOpenAI:
-		if ag.config.OpenAIAPIKey == "" || ag.config.OpenAIAPIKey == "your-openai-api-key-here" {
-			return fmt.Errorf("OpenAI API key not configured")
-		}
-	case ProviderClaude:
-		if ag.config.ClaudeAPIKey == "" || ag.config.ClaudeAPIKey == "your-claude-api-key-here" {
-			return fmt.Errorf("Claude API key not configured")
-		}
-	case ProviderRandom, ProviderAlternate:
-		if (ag.config.OpenAIAPIKey == "" || ag.config.OpenAIAPIKey == "your-openai-api-key-here") &&
-			(ag.config.ClaudeAPIKey == "" || ag.config.ClaudeAPIKey == "your-claude-api-key-here") {
-			return fmt.Errorf("at least one API key must be configured for random/alternate mode")
-		}
-	default:
-		return fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'random', or 'alternate')", ag.config.AIProvider)
-	}
-
-	return nil
+	return ag.config.Validate()
 }

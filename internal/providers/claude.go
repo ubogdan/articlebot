@@ -1,10 +1,8 @@
 package providers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"time"
@@ -90,7 +88,7 @@ func (ai *ClaudeAI) Call(prompt, message string) (string, error) {
 		Messages: []ClaudeMessage{
 			{Role: "user", Content: message},
 		},
-		System:      prompt,
+		System: prompt,
 	}
 
 	// Only include temperature for models that support it
@@ -104,28 +102,15 @@ func (ai *ClaudeAI) Call(prompt, message string) (string, error) {
 		return "", fmt.Errorf("error marshaling request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("error creating request: %w", err)
+	headers := map[string]string{
+		"Content-Type":      "application/json",
+		"x-api-key":         ai.config.apiKey,
+		"anthropic-version": "2023-06-01",
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", ai.config.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := ai.httpClient.Do(req)
+	body, err := doJSONRequest(ai.httpClient, http.MethodPost, "https://api.anthropic.com/v1/messages", headers, jsonData, 3)
 	if err != nil {
-		return "", fmt.Errorf("error making request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("error reading response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		return "", err
 	}
 
 	var claudeResp ClaudeResponse

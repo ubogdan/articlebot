@@ -72,12 +72,7 @@ func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount in
 		log.Println("")
 	}
 
-	// Ask user if they want to save
-	log.Println("💾 Save these topics to topics.json? (y/n)")
-	var answer string
-	fmt.Scanln(&answer)
-
-	if strings.ToLower(answer) == "y" || strings.ToLower(answer) == "yes" {
+	if shouldSaveTopics() {
 		if err := ag.saveGeneratedTopics(generatedTopics.Topics); err != nil {
 			return fmt.Errorf("failed to save topics: %w", err)
 		}
@@ -212,4 +207,29 @@ func extractJSONFromMarkdown(text string) string {
 	}
 
 	return text
+}
+
+func shouldSaveTopics() bool {
+	if len(os.Args) > 2 {
+		for _, arg := range os.Args[2:] {
+			switch strings.ToLower(arg) {
+			case "--save":
+				return true
+			case "--no-save", "--dry-run":
+				return false
+			}
+		}
+	}
+
+	if fileInfo, err := os.Stdin.Stat(); err == nil && (fileInfo.Mode()&os.ModeCharDevice) == 0 {
+		return false
+	}
+
+	log.Println("💾 Save these topics to topics.json? (y/n)")
+	var answer string
+	if _, err := fmt.Scanln(&answer); err != nil {
+		return false
+	}
+
+	return strings.ToLower(answer) == "y" || strings.ToLower(answer) == "yes"
 }

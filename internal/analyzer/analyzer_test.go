@@ -279,3 +279,22 @@ func TestDefaultConfig(t *testing.T) {
 		t.Error("ValidLanguages should not be empty")
 	}
 }
+
+func TestNormalizeIssuesRemovesDuplicatesAndSorts(t *testing.T) {
+	issues := []Issue{
+		{Type: IssueTypo, Severity: SeverityWarning, Line: 10, Message: "Possible typo: 'alot'", Suggestion: "Did you mean 'a lot'?"},
+		{Type: IssueTypo, Severity: SeverityWarning, Line: 10, Message: "Possible typo: 'alot'", Suggestion: "Did you mean 'a lot'?"},
+		{Type: IssueMissingMeta, Severity: SeverityInfo, Line: 1, Message: "Missing front matter field: description", Suggestion: "Add 'description' to your front matter"},
+	}
+
+	out := normalizeIssues(issues)
+	if len(out) != 2 {
+		t.Fatalf("normalizeIssues() returned %d issues, want 2", len(out))
+	}
+	if out[0].Severity != SeverityInfo {
+		t.Fatalf("normalizeIssues() sorted severity unexpectedly: got %v, want info first", out[0].Severity)
+	}
+	if out[1].Type != IssueTypo {
+		t.Fatalf("normalizeIssues() kept wrong remaining type: got %s, want %s", out[1].Type, IssueTypo)
+	}
+}

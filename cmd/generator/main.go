@@ -22,30 +22,30 @@ type ArticleGenerator struct {
 }
 
 func main() {
-	log.Println("🤖 Starting Multi-AI Technical Article Generator Bot...")
-	log.Println("   Supports: OpenAI (ChatGPT) & Anthropic (Claude)")
+	logInfo("generator", "Starting Multi-AI Technical Article Generator Bot...")
+	logInfo("generator", "Supports: OpenAI (ChatGPT) & Anthropic (Claude)")
 
 	gen := NewArticleGenerator()
 
 	// Load or create config
 	err := gen.loadConfig()
 	if err != nil {
-		log.Printf("⚙️  Creating default config: %v", err)
+		logWarn("config", "Creating default config: %v", err)
 		gen.createDefaultConfig()
-		log.Println("⚠️  Please configure your API keys in config.json")
+		logWarn("config", "Please configure your API keys in config.json")
 		return
 	}
 
 	err = gen.validateConfig()
 	if err != nil {
-		log.Printf("❌ Configuration error: %v", err)
-		log.Println("💡 Please check config.json and add required API keys")
+		logError("config", "Configuration error: %v", err)
+		logInfo("config", "Please check config.json and add required API keys")
 		return
 	}
 
-	log.Printf("✅ Configuration loaded")
-	log.Printf("   AI Provider: %s", gen.config.AIProvider)
-	log.Printf("   Articles per day: %d", gen.config.ArticlesPerDay)
+	logInfo("config", "Configuration loaded")
+	logInfo("config", "AI Provider: %s", gen.config.AIProvider)
+	logInfo("config", "Articles per day: %d", gen.config.ArticlesPerDay)
 
 	// Run in different modes
 	if len(os.Args) > 1 {
@@ -66,20 +66,19 @@ func main() {
 				domains = os.Args[2:]
 			}
 			if err := gen.generateTopicsWithAI(domains, 10); err != nil {
-				log.Printf("❌ Error generating topics: %v", err)
+				logError("topics", "Error generating topics: %v", err)
 			}
 		case "test":
 			gen.testConnections()
 		case "help":
 			printHelp()
 		default:
-			log.Printf("Unknown command: %s", os.Args[1])
+			logWarn("cli", "Unknown command: %s", os.Args[1])
 			printHelp()
 		}
 	} else {
 		printHelp()
-		//log.Println("")
-		//log.Println("🚀 Generating initial batch of articles...")
+		//logInfo("generator", "Generating initial batch of articles...")
 		//gen.generateArticles(1)
 
 		//fixArticle(gen)

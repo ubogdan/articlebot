@@ -25,10 +25,16 @@ The generator is not a generic app template; it is a content-production bot that
 
 ## Commands and workflow
 
-Use the Go toolchain directly from the repo root; there is no Makefile in this checkout.
+The repo now includes a root `Makefile` and supports both direct Go commands and standard task aliases.
 
 ```bash
-# run the test suite
+# common developer tasks
+make build
+make test
+make fmt
+make lint
+
+# direct Go commands also work
  go test ./...
 
 # smoke-test AI providers
@@ -42,9 +48,14 @@ Use the Go toolchain directly from the repo root; there is no Makefile in this c
 
 # generate topic suggestions with AI
  go run ./cmd/generator topics
+
+# non-interactive topic generation flags
+ go run ./cmd/generator topics --save
+ go run ./cmd/generator topics --no-save
+ go run ./cmd/generator topics --dry-run
 ```
 
-When you need a quick validation for generator changes, prefer a targeted package test or `go test ./cmd/generator/...` before broad repo-level runs.
+When you need a quick validation for generator changes, prefer the smallest relevant command (`go test ./cmd/generator`, `go test ./internal/analyzer`, or `make test`) before broad repo-level runs.
 
 ## Config and environment conventions
 
@@ -54,7 +65,8 @@ When you need a quick validation for generator changes, prefer a targeted packag
   - `OPENAI_API_KEY`
   - `ANTHROPIC_API_KEY`
 - `Config.applyEnv()` overrides in-file keys when environment variables are present.
-- `Config.validateConfig()` accepts only `openai`, `claude`, `random`, and `alternate`.
+- `Config.Validate()` is the canonical validation path and rejects invalid provider values, empty output dirs, non-positive generation settings, invalid temperature ranges, and placeholder API keys.
+- `Config.validateConfig()` delegates to `Config.Validate()`.
 
 Important examples:
 
@@ -89,7 +101,7 @@ providers.NewOpenAI(
 )
 ```
 
-Keep any new provider logic aligned with this interface and option style.
+`internal/providers/http.go` centralizes shared retry logic and API error handling for OpenAI and Claude requests. Keep any new provider logic aligned with this interface, option style, and retry behavior.
 
 ## Article generation pattern
 
@@ -102,6 +114,7 @@ The generation flow is:
 5. Reject or continue truncated content via `isArticleIncomplete()` and `requestContinuation()`
 6. Wrap output in Hugo front matter via `NewFrontMatter(...)`
 7. Save the file to `content/posts` via `HugoFrontMatter.Save(...)`
+8. Do not write transient root-level files like `article.md`; output should be written through the configured output directory and save API.
 
 `frontmatter.go` is the pattern to follow for new generated content. It emits YAML like:
 
@@ -118,6 +131,12 @@ description: "..."
 
 The file naming convention comes from `slugify()` and `Save()`: `YYYY-MM-DD-<slug>.md`.
 
+## Non-interactive and automation conventions
+
+- Topic generation is safe for automation: `topics` supports `--save`, `--no-save`, and `--dry-run` directly.
+- Avoid blocking on `fmt.Scanln` in new CLI flows; prefer explicit flags or a non-interactive default path.
+- Prefer deterministic, file-based output and do not create ad hoc artifacts in the repo root during generation.
+
 ## Analyzer and linting conventions
 
 The analyzer in `internal/analyzer/analyzer.go` is configuration-driven and uses explicit issue types, including:
@@ -131,7 +150,7 @@ The analyzer in `internal/analyzer/analyzer.go` is configuration-driven and uses
 - `style`
 - `structure`
 
-Default analyzer defaults are intentionally opinionated and embedded in `DefaultConfig()`, including common typo maps and outdated pattern rules. If you add validation logic, match the existing issue model (`Issue`, `Severity`, `IssueType`) instead of inventing a new reporting channel.
+Issues are normalized before they are returned: duplicates are removed and results are sorted by severity and location. If you add validation logic, match the existing issue model (`Issue`, `Severity`, `IssueType`) instead of inventing a new reporting channel.
 
 ## Codebase-specific guardrails
 
@@ -139,12 +158,13 @@ Default analyzer defaults are intentionally opinionated and embedded in `Default
 - Keep config keys aligned with the JSON tags already in use (`ai_provider`, `generation_interval_hours`, `output_dir`, etc.).
 - Preserve the existing Hugo front matter semantics; generated markdown is meant to be consumed by Hugo.
 - Prefer file-saving through the existing front matter API instead of ad hoc writing logic.
-- If you change behavior around provider models or output paths, update the corresponding tests and examples, especially in `cmd/generator/*.go`.
+- If you change behavior around provider models, output paths, or topic generation prompts, update the corresponding tests and examples, especially in `cmd/generator/*.go`.
 
 ## Existing tests to use as examples
 
 - `cmd/generator/config_test.go`: verifies env overrides for API keys.
+- `cmd/generator/config_validation_test.go`: verifies config validation and non-interactive topic-save behavior.
 - `cmd/generator/frontmatter_test.go`: verifies front matter quoting and YAML round-tripping.
+- `internal/analyzer/analyzer_dedupe_test.go`: verifies normalization and deduplication of issue results.
 
 Use these as the baseline style for new Go tests in this repo.
-

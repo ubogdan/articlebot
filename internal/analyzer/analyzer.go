@@ -195,7 +195,38 @@ func Analyze(article *parser.Article, cfg *Config) []Issue {
 	issues = append(issues, analyzeStructure(article, cfg)...)
 	issues = append(issues, analyzeOutdated(article, cfg)...)
 
-	return issues
+	return normalizeIssues(issues)
+}
+
+func normalizeIssues(issues []Issue) []Issue {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(issues))
+	unique := make([]Issue, 0, len(issues))
+	for _, issue := range issues {
+		key := fmt.Sprintf("%s|%d|%d|%q|%q", issue.Type, issue.Severity, issue.Line, issue.Message, issue.Suggestion)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, issue)
+	}
+
+	for i := 0; i < len(unique); i++ {
+		for j := i + 1; j < len(unique); j++ {
+			if issueSortKey(unique[j]) < issueSortKey(unique[i]) {
+				unique[i], unique[j] = unique[j], unique[i]
+			}
+		}
+	}
+
+	return unique
+}
+
+func issueSortKey(issue Issue) string {
+	return fmt.Sprintf("%d|%d|%s|%d", issue.Severity, issue.Line, issue.Type, issue.Line)
 }
 
 // analyzeMetadata checks front matter

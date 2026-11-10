@@ -133,7 +133,7 @@ func printHelp() {
 	log.Println("   go run main.go generate [N]     - Generate N articles")
 	log.Println("   go run main.go help             - Show this help")
 	log.Println("")
-	log.Println("📝 AI Provider Options (set in bot-config.json):")
+	log.Println("📝 AI Provider Options (set in config.json):")
 	log.Println("   'openai'    - Use only ChatGPT")
 	log.Println("   'claude'    - Use only Claude")
 	log.Println("   'random'    - Randomly select provider for each article")
@@ -278,7 +278,7 @@ func (ag *ArticleGenerator) selectUnusedTopic() Topic {
 func quoteStrings(strs []string) []string {
 	quoted := make([]string, len(strs))
 	for i, s := range strs {
-		quoted[i] = fmt.Sprintf("\"%s\"", s)
+		quoted[i] = quoteYAMLString(s)
 	}
 	return quoted
 }

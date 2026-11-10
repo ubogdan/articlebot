@@ -93,8 +93,19 @@ func (ag *ArticleGenerator) loadConfig() error {
 	}
 
 	config.GenerationInterval = config.GenerationInterval * time.Hour
+	config.applyEnv()
 	ag.config = config
 	return nil
+}
+
+// applyEnv overrides API keys with environment variables when they are set
+func (c *Config) applyEnv() {
+	if key := os.Getenv(EnvClaudeAPIKey); key != "" {
+		c.ClaudeAPIKey = key
+	}
+	if key := os.Getenv(EnvOpenAIAPIKey); key != "" {
+		c.OpenAIAPIKey = key
+	}
 }
 
 // createDefaultConfig creates a default configuration file
@@ -108,17 +119,19 @@ func (ag *ArticleGenerator) createDefaultConfig() {
 		return
 	}
 
-	if err := os.WriteFile(ConfigFilename, data, 0644); err != nil {
+	// The config may hold API keys, so keep it readable by the owner only
+	if err := os.WriteFile(ConfigFilename, data, 0600); err != nil {
 		log.Printf("Error writing config: %v", err)
 		return
 	}
 
-	log.Println("✅ Created bot-config.json")
+	log.Printf("✅ Created %s", ConfigFilename)
 	log.Println("")
 	log.Println("📝 Configuration options:")
 	log.Println("   ai_provider: 'openai', 'claude', 'random', or 'alternate'")
 	log.Println("   openai_api_key: Get from https://platform.openai.com/api-keys")
 	log.Println("   claude_api_key: Get from https://console.anthropic.com/")
+	log.Printf("   API keys can also be set via %s and %s", EnvClaudeAPIKey, EnvOpenAIAPIKey)
 }
 
 // validateConfig checks if the configuration is valid

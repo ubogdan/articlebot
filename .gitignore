@@ -1,3 +1,6 @@
 content/posts/
 config.json
 topics.json
+api.txt
+.idea/
+*.backup

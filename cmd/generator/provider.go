@@ -15,6 +15,9 @@ const (
 
 	ConfigFilename = "config.json"
 	TopicsFilename = "topics.json"
+
+	EnvClaudeAPIKey = "ANTHROPIC_API_KEY"
+	EnvOpenAIAPIKey = "OPENAI_API_KEY"
 )
 
 type Provider interface {

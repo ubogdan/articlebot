@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -39,15 +40,15 @@ func NewFrontMatter(topic Topic, content string, isDraft bool) *HugoFrontMatter 
 	}
 
 	builder.WriteString("---\n")
-	builder.WriteString(fmt.Sprintf("title: \"%s\"\n", frontMatter.Title))
+	builder.WriteString(fmt.Sprintf("title: %s\n", quoteYAMLString(frontMatter.Title)))
 	builder.WriteString(fmt.Sprintf("date: %s\n", frontMatter.Date))
 	builder.WriteString(fmt.Sprintf("draft: %t\n", frontMatter.Draft))
 	builder.WriteString(fmt.Sprintf("tags: [%s]\n", strings.Join(quoteStrings(frontMatter.Tags), ", ")))
 	builder.WriteString(fmt.Sprintf("categories: [%s]\n", strings.Join(quoteStrings(frontMatter.Categories), ", ")))
-	builder.WriteString(fmt.Sprintf("description: \"%s\"\n", frontMatter.Description))
+	builder.WriteString(fmt.Sprintf("description: %s\n", quoteYAMLString(frontMatter.Description)))
 	//builder.WriteString(fmt.Sprintf("author: \"%s\"\n", frontMatter.Author))
 	if frontMatter.Series != "" {
-		builder.WriteString(fmt.Sprintf("series: \"%s\"\n", frontMatter.Series))
+		builder.WriteString(fmt.Sprintf("series: %s\n", quoteYAMLString(frontMatter.Series)))
 	}
 	builder.WriteString("---\n\n")
 
@@ -58,6 +59,12 @@ func NewFrontMatter(topic Topic, content string, isDraft bool) *HugoFrontMatter 
 	frontMatter.Content = builder.String()
 
 	return &frontMatter
+}
+
+func quoteYAMLString(value string) string {
+	// JSON double-quoted strings are a valid subset of YAML 1.2 scalars.
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
 }
 
 // Save saves the article to a file

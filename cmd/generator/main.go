@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/urfave/cli/v2"
 )
 
 // ArticleGenerator handles the generation of technical articles
@@ -22,71 +24,162 @@ type ArticleGenerator struct {
 }
 
 func main() {
-	logInfo("generator", "Starting Multi-AI Technical Article Generator Bot...")
-	logInfo("generator", "Supports: OpenAI (ChatGPT) & Anthropic (Claude)")
+	if err := newApp().Run(os.Args); err != nil {
+		logError("cli", "Command failed: %v", err)
+		os.Exit(1)
+	}
+}
 
+func newApp() *cli.App {
+	return &cli.App{
+		Name:  "articlebot",
+		Usage: "Multi-AI technical article generator",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "provider",
+				Usage: "Override configured AI provider (openai, claude, ollama, random, alternate)",
+			},
+		},
+		Commands: []*cli.Command{
+			{
+				Name:  "daemon",
+				Usage: "Run continuously",
+				Action: func(c *cli.Context) error {
+					gen, err := loadGeneratorForCommand(c)
+					if err != nil {
+						return err
+					}
+					if gen == nil {
+						return nil
+					}
+					gen.runDaemon()
+					return nil
+				},
+			},
+			{
+				Name:      "generate",
+				Usage:     "Generate N articles",
+				ArgsUsage: "[N]",
+				Action: func(c *cli.Context) error {
+					gen, err := loadGeneratorForCommand(c)
+					if err != nil {
+						return err
+					}
+					if gen == nil {
+						return nil
+					}
+
+					count := 1
+					if c.Args().Len() > 0 {
+						if n, err := fmt.Sscanf(c.Args().First(), "%d", &count); err != nil || n != 1 {
+							return fmt.Errorf("invalid article count %q: %w", c.Args().First(), err)
+						}
+					}
+					gen.generateArticles(count)
+					return nil
+				},
+			},
+			{
+				Name:      "topics",
+				Usage:     "Generate new article topics",
+				ArgsUsage: "[domain ...]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "save", Usage: "Save generated topics to topics.json"},
+					&cli.BoolFlag{Name: "no-save", Usage: "Do not save generated topics"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "Do not save generated topics"},
+				},
+				Action: func(c *cli.Context) error {
+					gen, err := loadGeneratorForCommand(c)
+					if err != nil {
+						return err
+					}
+					if gen == nil {
+						return nil
+					}
+
+					domains := []string{"Go Development", "DevOps", "SRE", "SecOps"}
+					if c.Args().Len() > 0 {
+						domains = filterTopicDomains(c.Args().Slice())
+						if len(domains) == 0 {
+							domains = []string{"Go Development", "DevOps", "SRE", "SecOps"}
+						}
+					}
+
+					if c.Bool("save") {
+						os.Args = append(os.Args, "--save")
+					}
+					if c.Bool("no-save") {
+						os.Args = append(os.Args, "--no-save")
+					}
+					if c.Bool("dry-run") {
+						os.Args = append(os.Args, "--dry-run")
+					}
+
+					if err := gen.generateTopicsWithAI(domains, 10); err != nil {
+						logError("topics", "Error generating topics: %v", err)
+						return err
+					}
+					return nil
+				},
+			},
+			{
+				Name:  "test",
+				Usage: "Test API connections",
+				Action: func(c *cli.Context) error {
+					gen, err := loadGeneratorForCommand(c)
+					if err != nil {
+						return err
+					}
+					if gen == nil {
+						return nil
+					}
+					gen.testConnections()
+					return nil
+				},
+			},
+			{
+				Name:  "help",
+				Usage: "Show command help",
+				Action: func(c *cli.Context) error {
+					printHelp()
+					return nil
+				},
+			},
+		},
+		Action: func(c *cli.Context) error {
+			printHelp()
+			return nil
+		},
+	}
+
+}
+
+func loadGeneratorForCommand(c *cli.Context) (*ArticleGenerator, error) {
 	gen := NewArticleGenerator()
 
-	// Load or create config
 	err := gen.loadConfig()
 	if err != nil {
 		logWarn("config", "Creating default config: %v", err)
 		gen.createDefaultConfig()
 		logWarn("config", "Please configure your API keys in config.json")
-		return
+		return nil, nil
+	}
+
+	if c.IsSet("provider") {
+		gen.config.AIProvider = c.String("provider")
 	}
 
 	err = gen.validateConfig()
 	if err != nil {
 		logError("config", "Configuration error: %v", err)
 		logInfo("config", "Please check config.json and add required API keys")
-		return
+		return nil, err
 	}
 
 	logInfo("config", "Configuration loaded")
 	logInfo("config", "AI Provider: %s", gen.config.AIProvider)
 	logInfo("config", "Articles per day: %d", gen.config.ArticlesPerDay)
-
-	// Run in different modes
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "daemon":
-			gen.runDaemon()
-		case "generate":
-			count := 1
-			if len(os.Args) > 2 {
-				fmt.Sscanf(os.Args[2], "%d", &count)
-			}
-			gen.generateArticles(count)
-		case "topics":
-			// Generate new topics with AI
-			domains := []string{"Go Development", "DevOps", "SRE", "SecOps"}
-			if len(os.Args) > 2 {
-				// Ignore CLI flags like --save/--no-save/--dry-run and treat the remaining
-				// positional arguments as custom topic domains.
-				domains = filterTopicDomains(os.Args[2:])
-				if len(domains) == 0 {
-					domains = []string{"Go Development", "DevOps", "SRE", "SecOps"}
-				}
-			}
-			if err := gen.generateTopicsWithAI(domains, 10); err != nil {
-				logError("topics", "Error generating topics: %v", err)
-			}
-		case "test":
-			gen.testConnections()
-		case "help":
-			printHelp()
-		default:
-			logWarn("cli", "Unknown command: %s", os.Args[1])
-			printHelp()
-		}
-	} else {
-		printHelp()
-		//logInfo("generator", "Generating initial batch of articles...")
-		//gen.generateArticles(1)
-
-		//fixArticle(gen)
-	}
+	return gen, nil
 }
 
 func fixArticle(gen *ArticleGenerator) {
@@ -131,14 +224,19 @@ func fixArticle(gen *ArticleGenerator) {
 func printHelp() {
 	log.Println("")
 	log.Println("💡 Usage:")
-	log.Println("   go run main.go test             - Test API connections")
-	log.Println("   go run main.go daemon           - Run continuously")
-	log.Println("   go run main.go generate [N]     - Generate N articles")
-	log.Println("   go run main.go help             - Show this help")
+	log.Println("   articlebot test                 - Test API connections")
+	log.Println("   articlebot daemon              - Run continuously")
+	log.Println("   articlebot generate [N]        - Generate N articles")
+	log.Println("   articlebot topics [domain...]  - Generate topic ideas")
+	log.Println("   articlebot topics --save       - Save output to topics.json")
+	log.Println("   articlebot topics --no-save    - Skip saving")
+	log.Println("   articlebot help                - Show this help")
+	log.Println("   articlebot --provider openai generate 1 - Override configured provider")
 	log.Println("")
-	log.Println("📝 AI Provider Options (set in config.json):")
+	log.Println("📝 AI Provider Options (config.json or --provider before the command):")
 	log.Println("   'openai'    - Use only ChatGPT")
 	log.Println("   'claude'    - Use only Claude")
+	log.Println("   'ollama'    - Use local Ollama")
 	log.Println("   'random'    - Randomly select provider for each article")
 	log.Println("   'alternate' - Alternate between providers")
 }

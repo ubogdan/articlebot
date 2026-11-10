@@ -148,7 +148,11 @@ func (ag *ArticleGenerator) loadConfig() error {
 		return err
 	}
 
-	var config Config
+	defaults := getDefaultConfig()
+	config := Config{
+		OllamaHost:  defaults.OllamaHost,
+		OllamaModel: defaults.OllamaModel,
+	}
 	if err := json.Unmarshal(data, &config); err != nil {
 		return err
 	}

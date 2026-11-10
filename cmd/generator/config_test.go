@@ -1,10 +1,80 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"reflect"
 	"testing"
+	"time"
 )
+
+func TestLoadConfigOllamaDefaults(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldDir); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Setenv(EnvOpenAIAPIKey, "")
+	t.Setenv(EnvClaudeAPIKey, "")
+
+	tests := []struct {
+		name      string
+		fields    map[string]interface{}
+		hostEnv   string
+		modelEnv  string
+		wantHost  string
+		wantModel string
+		wantErr   bool
+	}{
+		{name: "omitted fields", wantHost: "http://localhost:11434", wantModel: "llama2"},
+		{name: "file values", fields: map[string]interface{}{"ollama_host": "http://ollama:11434", "ollama_model": "custom"}, wantHost: "http://ollama:11434", wantModel: "custom"},
+		{name: "environment overrides defaults", hostEnv: "http://remote:11434", modelEnv: "env-model", wantHost: "http://remote:11434", wantModel: "env-model"},
+		{name: "explicit empty host rejected", fields: map[string]interface{}{"ollama_host": ""}, wantModel: "llama2", wantErr: true},
+		{name: "explicit empty model rejected", fields: map[string]interface{}{"ollama_model": ""}, wantHost: "http://localhost:11434", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvOllamaHost, tt.hostEnv)
+			t.Setenv(EnvOllamaModel, tt.modelEnv)
+			fields := map[string]interface{}{
+				"ai_provider": "ollama", "output_dir": "content/posts",
+				"articles_per_day": 1, "generation_interval_hours": 8,
+				"max_tokens": 4000, "temperature": 0.7,
+			}
+			for key, value := range tt.fields {
+				fields[key] = value
+			}
+			data, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(ConfigFilename, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			gen := NewArticleGenerator()
+			if err := gen.loadConfig(); err != nil {
+				t.Fatal(err)
+			}
+			if gen.config.OllamaHost != tt.wantHost || gen.config.OllamaModel != tt.wantModel {
+				t.Fatalf("got host=%q model=%q, want host=%q model=%q", gen.config.OllamaHost, gen.config.OllamaModel, tt.wantHost, tt.wantModel)
+			}
+			if err := gen.validateConfig(); (err != nil) != tt.wantErr {
+				t.Fatalf("validateConfig() = %v, wantErr %v", err, tt.wantErr)
+			}
+			if gen.config.GenerationInterval != 8*time.Hour {
+				t.Fatalf("unexpected generation interval: %v", gen.config.GenerationInterval)
+			}
+		})
+	}
+}
 
 func TestConfigApplyEnv(t *testing.T) {
 	tests := []struct {

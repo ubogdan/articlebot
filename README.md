@@ -26,6 +26,31 @@ make install
 
 ## Usage
 
+### Article Generation
+
+The generator reads its provider from `ai_provider` in `config.json`. Override it
+for one run with the global `--provider` flag before the command:
+
+```bash
+go run ./cmd/generator --provider openai generate 1
+go run ./cmd/generator --provider ollama topics --no-save
+go run ./cmd/generator --provider claude daemon
+```
+
+Supported values are `openai`, `claude`, `ollama`, `random`, and `alternate`.
+The override does not modify `config.json`; the selected provider must have valid
+configuration. Without the flag, the configured provider is unchanged.
+The `test` command still checks all configured API connections.
+
+For Ollama, omitted `ollama_host` and `ollama_model` settings default to
+`http://localhost:11434` and `llama2`. Set them in `config.json`, or use
+`OLLAMA_HOST` and `OLLAMA_MODEL` to override them. The model must already be
+installed in Ollama:
+
+```bash
+OLLAMA_MODEL=llama3.2 go run ./cmd/generator --provider ollama generate 1
+```
+
 ### Basic Analysis
 
 ```bash

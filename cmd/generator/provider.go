@@ -10,6 +10,7 @@ type AIProvider string
 const (
 	ProviderOpenAI    AIProvider = "openai"
 	ProviderClaude    AIProvider = "claude"
+	ProviderOllama    AIProvider = "ollama"
 	ProviderRandom    AIProvider = "random"
 	ProviderAlternate AIProvider = "alternate"
 
@@ -18,6 +19,8 @@ const (
 
 	EnvClaudeAPIKey = "ANTHROPIC_API_KEY"
 	EnvOpenAIAPIKey = "OPENAI_API_KEY"
+	EnvOllamaHost   = "OLLAMA_HOST"
+	EnvOllamaModel  = "OLLAMA_MODEL"
 )
 
 type Provider interface {
@@ -29,6 +32,7 @@ type Provider interface {
 func (ag *ArticleGenerator) selectProvider() AIProvider {
 	hasOpenAI := ag.config.OpenAIAPIKey != "" && ag.config.OpenAIAPIKey != "your-openai-api-key-here"
 	hasClaude := ag.config.ClaudeAPIKey != "" && ag.config.ClaudeAPIKey != "your-claude-api-key-here"
+	hasOllama := ag.config.OllamaHost != "" && ag.config.OllamaModel != ""
 
 	provider := AIProvider(ag.config.AIProvider)
 
@@ -42,6 +46,12 @@ func (ag *ArticleGenerator) selectProvider() AIProvider {
 	case ProviderClaude:
 		if hasClaude {
 			return ProviderClaude
+		}
+		return ProviderOpenAI
+
+	case ProviderOllama:
+		if hasOllama {
+			return ProviderOllama
 		}
 		return ProviderOpenAI
 

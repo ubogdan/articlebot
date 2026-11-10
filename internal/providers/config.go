@@ -5,6 +5,7 @@ type Config struct {
 	model       string
 	maxTokens   int
 	temperature float64
+	baseURL     string
 }
 
 func WithAPIKey(apiKey string) func(*Config) {
@@ -28,5 +29,11 @@ func WithMaxTokens(maxTokens int) func(*Config) {
 func WithTemperature(temperature float64) func(*Config) {
 	return func(c *Config) {
 		c.temperature = temperature
+	}
+}
+
+func WithBaseURL(baseURL string) func(*Config) {
+	return func(c *Config) {
+		c.baseURL = baseURL
 	}
 }

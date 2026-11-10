@@ -13,11 +13,13 @@ import (
 // Config holds bot configuration
 type Config struct {
 	// AI Provider settings
-	AIProvider   string  `json:"ai_provider"` // "openai", "claude", "random", "alternate"
+	AIProvider   string  `json:"ai_provider"` // "openai", "claude", "ollama", "random", "alternate"
 	OpenAIAPIKey string  `json:"openai_api_key"`
 	ClaudeAPIKey string  `json:"claude_api_key"`
 	OpenAIModel  string  `json:"openai_model"`
 	ClaudeModel  string  `json:"claude_model"`
+	OllamaHost   string  `json:"ollama_host"`
+	OllamaModel  string  `json:"ollama_model"`
 	Temperature  float64 `json:"temperature"`
 	MaxTokens    int     `json:"max_tokens"`
 
@@ -34,6 +36,10 @@ func (c Config) HasClaude() bool {
 
 func (c Config) HasOpenAI() bool {
 	return c.OpenAIAPIKey != "" && c.OpenAIAPIKey != "your-openai-api-key-here"
+}
+
+func (c Config) HasOllama() bool {
+	return c.OllamaHost != "" && c.OllamaModel != ""
 }
 
 func (c Config) Provider(provider AIProvider) (Provider, error) {
@@ -59,8 +65,18 @@ func (c Config) Provider(provider AIProvider) (Provider, error) {
 			providers.WithTemperature(c.Temperature),
 			providers.WithMaxTokens(c.MaxTokens),
 		), nil
+	case ProviderOllama:
+		if !c.HasOllama() {
+			return nil, fmt.Errorf("Ollama host and model must be configured")
+		}
+		return providers.NewOllama(
+			c.OllamaHost,
+			c.OllamaModel,
+			providers.WithTemperature(c.Temperature),
+			providers.WithMaxTokens(c.MaxTokens),
+		), nil
 	}
-	return nil, fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'random', or 'alternate')", c.AIProvider)
+	return nil, fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'ollama', 'random', or 'alternate')", c.AIProvider)
 }
 
 // Validate checks the runtime configuration for invalid or unsafe values.
@@ -90,13 +106,17 @@ func (c Config) Validate() error {
 		if c.ClaudeAPIKey == "" || c.ClaudeAPIKey == "your-claude-api-key-here" {
 			return fmt.Errorf("Claude API key not configured")
 		}
+	case ProviderOllama:
+		if c.OllamaHost == "" || c.OllamaModel == "" {
+			return fmt.Errorf("Ollama host and model must be configured")
+		}
 	case ProviderRandom, ProviderAlternate:
 		if (c.OpenAIAPIKey == "" || c.OpenAIAPIKey == "your-openai-api-key-here") &&
 			(c.ClaudeAPIKey == "" || c.ClaudeAPIKey == "your-claude-api-key-here") {
 			return fmt.Errorf("at least one API key must be configured for random/alternate mode")
 		}
 	default:
-		return fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'random', or 'alternate')", c.AIProvider)
+		return fmt.Errorf("invalid AI provider: %s (use 'openai', 'claude', 'ollama', 'random', or 'alternate')", c.AIProvider)
 	}
 
 	return nil
@@ -110,6 +130,8 @@ func getDefaultConfig() Config {
 		ClaudeAPIKey:       "your-claude-api-key-here",
 		OpenAIModel:        "gpt-4o-mini",
 		ClaudeModel:        "claude-sonnet-4-20250514",
+		OllamaHost:         "http://localhost:11434",
+		OllamaModel:        "llama2",
 		Temperature:        0.7,
 		MaxTokens:          4000,
 		OutputDir:          "content/posts",
@@ -145,6 +167,12 @@ func (c *Config) applyEnv() {
 	if key := os.Getenv(EnvOpenAIAPIKey); key != "" {
 		c.OpenAIAPIKey = key
 	}
+	if key := os.Getenv(EnvOllamaHost); key != "" {
+		c.OllamaHost = key
+	}
+	if key := os.Getenv(EnvOllamaModel); key != "" {
+		c.OllamaModel = key
+	}
 }
 
 // createDefaultConfig creates a default configuration file
@@ -167,9 +195,11 @@ func (ag *ArticleGenerator) createDefaultConfig() {
 	log.Printf("✅ Created %s", ConfigFilename)
 	log.Println("")
 	log.Println("📝 Configuration options:")
-	log.Println("   ai_provider: 'openai', 'claude', 'random', or 'alternate'")
+	log.Println("   ai_provider: 'openai', 'claude', 'ollama', 'random', or 'alternate'")
 	log.Println("   openai_api_key: Get from https://platform.openai.com/api-keys")
 	log.Println("   claude_api_key: Get from https://console.anthropic.com/")
+	log.Println("   ollama_host: Host for Ollama API (default: http://localhost:11434)")
+	log.Println("   ollama_model: Model name for Ollama")
 	log.Printf("   API keys can also be set via %s and %s", EnvClaudeAPIKey, EnvOpenAIAPIKey)
 }
 

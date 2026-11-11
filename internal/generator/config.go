@@ -1,9 +1,8 @@
-package main
+package generator
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -122,8 +121,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// getDefaultConfig returns default configuration
-func getDefaultConfig() Config {
+// DefaultConfig returns default configuration.
+func DefaultConfig() Config {
 	return Config{
 		AIProvider:         "random",
 		OpenAIAPIKey:       "your-openai-api-key-here",
@@ -141,73 +140,53 @@ func getDefaultConfig() Config {
 	}
 }
 
-// loadConfig loads configuration from file
-func (ag *ArticleGenerator) loadConfig() error {
-	data, err := os.ReadFile(ConfigFilename)
+// LoadConfig loads configuration from path, converting stored hours to a duration.
+// Environment overrides and provider selection belong to the caller.
+func LoadConfig(path string) (Config, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return Config{}, err
 	}
 
-	defaults := getDefaultConfig()
+	defaults := DefaultConfig()
 	config := Config{
 		OllamaHost:  defaults.OllamaHost,
 		OllamaModel: defaults.OllamaModel,
 	}
 	if err := json.Unmarshal(data, &config); err != nil {
-		return err
+		return Config{}, err
 	}
 
 	config.GenerationInterval = config.GenerationInterval * time.Hour
-	config.applyEnv()
-	ag.config = config
-	return nil
+	return config, nil
 }
 
-// applyEnv overrides API keys with environment variables when they are set
-func (c *Config) applyEnv() {
-	if key := os.Getenv(EnvClaudeAPIKey); key != "" {
+// ApplyEnv overrides settings using the supplied environment lookup.
+func (c *Config) ApplyEnv(getenv func(string) string) {
+	if key := getenv(EnvClaudeAPIKey); key != "" {
 		c.ClaudeAPIKey = key
 	}
-	if key := os.Getenv(EnvOpenAIAPIKey); key != "" {
+	if key := getenv(EnvOpenAIAPIKey); key != "" {
 		c.OpenAIAPIKey = key
 	}
-	if key := os.Getenv(EnvOllamaHost); key != "" {
+	if key := getenv(EnvOllamaHost); key != "" {
 		c.OllamaHost = key
 	}
-	if key := os.Getenv(EnvOllamaModel); key != "" {
+	if key := getenv(EnvOllamaModel); key != "" {
 		c.OllamaModel = key
 	}
 }
 
-// createDefaultConfig creates a default configuration file
-func (ag *ArticleGenerator) createDefaultConfig() {
-	config := ag.config
-	config.GenerationInterval = 8 // Store as hours for JSON
+// WriteDefaultConfig writes a template with the interval stored in hours.
+func WriteDefaultConfig(path string) error {
+	config := DefaultConfig()
+	config.GenerationInterval /= time.Hour
 
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		log.Printf("Error creating config: %v", err)
-		return
+		return fmt.Errorf("encode default config: %w", err)
 	}
 
 	// The config may hold API keys, so keep it readable by the owner only
-	if err := os.WriteFile(ConfigFilename, data, 0600); err != nil {
-		log.Printf("Error writing config: %v", err)
-		return
-	}
-
-	log.Printf("✅ Created %s", ConfigFilename)
-	log.Println("")
-	log.Println("📝 Configuration options:")
-	log.Println("   ai_provider: 'openai', 'claude', 'ollama', 'random', or 'alternate'")
-	log.Println("   openai_api_key: Get from https://platform.openai.com/api-keys")
-	log.Println("   claude_api_key: Get from https://console.anthropic.com/")
-	log.Println("   ollama_host: Host for Ollama API (default: http://localhost:11434)")
-	log.Println("   ollama_model: Model name for Ollama")
-	log.Printf("   API keys can also be set via %s and %s", EnvClaudeAPIKey, EnvOpenAIAPIKey)
-}
-
-// validateConfig checks if the configuration is valid
-func (ag *ArticleGenerator) validateConfig() error {
-	return ag.config.Validate()
+	return os.WriteFile(path, data, 0600)
 }

@@ -1,9 +1,8 @@
-package main
+package generator
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,13 +23,13 @@ type HugoFrontMatter struct {
 	Content     string   `json:"-"`
 }
 
-// formatWithFrontMatter combines front matter and content
-func NewFrontMatter(topic Topic, content string, isDraft bool) *HugoFrontMatter {
+// NewFrontMatter combines front matter and content at the supplied time.
+func NewFrontMatter(topic Topic, content string, isDraft bool, now time.Time) *HugoFrontMatter {
 	var builder strings.Builder
 
 	frontMatter := HugoFrontMatter{
 		Title:       topic.Title,
-		Date:        time.Now().Format(time.RFC3339),
+		Date:        now.Format(time.RFC3339),
 		Draft:       isDraft,
 		Tags:        topic.Keywords,
 		Categories:  []string{topic.Category},
@@ -68,27 +67,29 @@ func quoteYAMLString(value string) string {
 }
 
 // Save saves the article to a file
-func (fm *HugoFrontMatter) Save(outputDir string) string {
-	err := os.MkdirAll(outputDir, 0755)
+func (fm *HugoFrontMatter) Save(outputDir string) (string, error) {
+	date, err := time.Parse(time.RFC3339, fm.Date)
 	if err != nil {
-		log.Printf("❌ Error creating directory: %v", err)
-		return ""
+		return "", fmt.Errorf("parse article date: %w", err)
+	}
+	err = os.MkdirAll(outputDir, 0755)
+	if err != nil {
+		return "", fmt.Errorf("create output directory: %w", err)
 	}
 
 	filename := filepath.Join(outputDir,
 		fmt.Sprintf("%s-%s.md",
-			time.Now().Format("2006-01-02"),
+			date.Format("2006-01-02"),
 			slugify(fm.Title),
 		),
 	)
 
 	err = os.WriteFile(filename, []byte(fm.Content), 0644)
 	if err != nil {
-		log.Printf("❌ Error writing file: %v", err)
-		return ""
+		return "", fmt.Errorf("write article: %w", err)
 	}
 
-	return filename
+	return filename, nil
 }
 
 func slugify(s string) string {
@@ -120,4 +121,46 @@ func slugify(s string) string {
 	s = strings.Trim(s, "-")
 
 	return s
+}
+
+func quoteStrings(strs []string) []string {
+	quoted := make([]string, len(strs))
+	for i, s := range strs {
+		quoted[i] = quoteYAMLString(s)
+	}
+	return quoted
+}
+
+func detectSeries(topic Topic) string {
+	switch topic.Category {
+	case "SRE":
+		return "Site Reliability Engineering"
+	case "SecOps":
+		return "Security Operations"
+	}
+	if contains(topic.Keywords, "kubernetes") {
+		return "Kubernetes Mastery"
+	}
+	if contains(topic.Keywords, "microservices") {
+		return "Microservices Architecture"
+	}
+	if contains(topic.Keywords, "security") {
+		return "Security Best Practices"
+	}
+	if contains(topic.Keywords, "monitoring") || contains(topic.Keywords, "observability") {
+		return "Observability & Monitoring"
+	}
+	if topic.Category == "Go Development" && topic.Difficulty == "Beginner" {
+		return "Go Fundamentals"
+	}
+	return ""
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

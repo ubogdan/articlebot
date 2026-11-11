@@ -1,9 +1,10 @@
-package main
+package generator
 
 import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewFrontMatterPreservesExistingOutput(t *testing.T) {
@@ -14,7 +15,7 @@ func TestNewFrontMatterPreservesExistingOutput(t *testing.T) {
 		Description: "A practical guide to reliable services.",
 	}
 
-	got := NewFrontMatter(topic, "# Building Reliable Services\nArticle body.\n", true)
+	got := NewFrontMatter(topic, "# Building Reliable Services\nArticle body.\n", true, time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC))
 	want := strings.Join([]string{
 		"---",
 		`title: "Building Reliable Services"`,
@@ -42,7 +43,7 @@ func TestNewFrontMatterEscapesMetadata(t *testing.T) {
 		Description: "Description with \"quotes\", \\slashes,\nand a newline.",
 	}
 
-	got := NewFrontMatter(topic, "Article body.", false)
+	got := NewFrontMatter(topic, "Article body.", false, time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC))
 	for _, expected := range []string{
 		`title: "A \"quoted\" title\nwith a newline"`,
 		`tags: ["one \"quote\"", "back\\slash", "line\nbreak", "comma, and colon: value", "[brackets] #hash"]`,

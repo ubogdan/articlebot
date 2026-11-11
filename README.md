@@ -81,6 +81,32 @@ Random selection does not guarantee equal coverage. The AI receives an explicit
 domain assignment per topic, without a blanket Go-language preference. Responses
 with the wrong count or mismatched categories are rejected before saving.
 
+Topic save flags are parsed per invocation, without modifying process arguments.
+`--save` cannot be combined with `--no-save` or `--dry-run`. Without a flag,
+interactive use prompts for confirmation; piped input defaults to saving.
+
+### Generator Architecture
+
+`cmd/generator` handles CLI arguments, environment overrides, and interactive
+prompts. `internal/generator` owns provider selection, article continuation,
+topic generation, scheduling, and Hugo output.
+
+Construct a service with `generator.New(config, generator.Options{...})`.
+Options inject a provider factory (`NewProvider`), topic/output paths (`Paths`),
+and wall-clock time (`Now`). Omitted options retain the production provider
+wrappers, `topics.json`, the configured output directory, and `time.Now`.
+The constructor performs no file or network I/O.
+
+`GenerateTopics` returns validated topics without saving or prompting;
+`SaveTopics` persists them explicitly. Article dates and filenames use the same
+injected timestamp. CLI tests additionally inject the configuration path,
+environment lookup, and CLI reader, so tests do not change the working directory
+or process arguments.
+
+```bash
+go test ./cmd/generator ./internal/generator
+```
+
 ### Basic Analysis
 
 ```bash

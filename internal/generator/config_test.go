@@ -1,29 +1,16 @@
-package main
+package generator
 
 import (
 	"encoding/json"
 	"os"
-	"reflect"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestLoadConfigOllamaDefaults(t *testing.T) {
 	dir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldDir); err != nil {
-			t.Error(err)
-		}
-	})
-	t.Setenv(EnvOpenAIAPIKey, "")
-	t.Setenv(EnvClaudeAPIKey, "")
+	path := filepath.Join(dir, ConfigFilename)
 
 	tests := []struct {
 		name      string
@@ -42,8 +29,7 @@ func TestLoadConfigOllamaDefaults(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(EnvOllamaHost, tt.hostEnv)
-			t.Setenv(EnvOllamaModel, tt.modelEnv)
+			env := map[string]string{EnvOllamaHost: tt.hostEnv, EnvOllamaModel: tt.modelEnv}
 			fields := map[string]interface{}{
 				"ai_provider": "ollama", "output_dir": "content/posts",
 				"articles_per_day": 1, "generation_interval_hours": 8,
@@ -56,21 +42,22 @@ func TestLoadConfigOllamaDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(ConfigFilename, data, 0600); err != nil {
+			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			gen := NewArticleGenerator()
-			if err := gen.loadConfig(); err != nil {
+			config, err := LoadConfig(path)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if gen.config.OllamaHost != tt.wantHost || gen.config.OllamaModel != tt.wantModel {
-				t.Fatalf("got host=%q model=%q, want host=%q model=%q", gen.config.OllamaHost, gen.config.OllamaModel, tt.wantHost, tt.wantModel)
+			config.ApplyEnv(func(key string) string { return env[key] })
+			if config.OllamaHost != tt.wantHost || config.OllamaModel != tt.wantModel {
+				t.Fatalf("got host=%q model=%q, want host=%q model=%q", config.OllamaHost, config.OllamaModel, tt.wantHost, tt.wantModel)
 			}
-			if err := gen.validateConfig(); (err != nil) != tt.wantErr {
+			if err := config.Validate(); (err != nil) != tt.wantErr {
 				t.Fatalf("validateConfig() = %v, wantErr %v", err, tt.wantErr)
 			}
-			if gen.config.GenerationInterval != 8*time.Hour {
-				t.Fatalf("unexpected generation interval: %v", gen.config.GenerationInterval)
+			if config.GenerationInterval != 8*time.Hour {
+				t.Fatalf("unexpected generation interval: %v", config.GenerationInterval)
 			}
 		})
 	}
@@ -95,13 +82,13 @@ func TestConfigApplyEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(EnvClaudeAPIKey, tt.claudeEnv)
-			t.Setenv(EnvOpenAIAPIKey, tt.openAIEnv)
-			t.Setenv(EnvOllamaHost, tt.ollamaHost)
-			t.Setenv(EnvOllamaModel, tt.ollamaModel)
+			env := map[string]string{
+				EnvClaudeAPIKey: tt.claudeEnv, EnvOpenAIAPIKey: tt.openAIEnv,
+				EnvOllamaHost: tt.ollamaHost, EnvOllamaModel: tt.ollamaModel,
+			}
 
 			cfg := Config{ClaudeAPIKey: "file-claude", OpenAIAPIKey: "file-openai", OllamaHost: "file-host", OllamaModel: "file-model"}
-			cfg.applyEnv()
+			cfg.ApplyEnv(func(key string) string { return env[key] })
 
 			if cfg.ClaudeAPIKey != tt.wantClaude || cfg.OpenAIAPIKey != tt.wantOpenAI || cfg.OllamaHost != tt.wantOllamaHost || cfg.OllamaModel != tt.wantOllamaModel {
 				t.Fatalf("got claude=%q openai=%q ollama_host=%q ollama_model=%q, want claude=%q openai=%q ollama_host=%q ollama_model=%q",
@@ -221,28 +208,5 @@ func TestConfigValidate(t *testing.T) {
 				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestShouldSaveTopicsArgs(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-
-	os.Args = []string{"articlebot", "topics", "--save"}
-	if !shouldSaveTopics() {
-		t.Fatal("expected --save to enable saving")
-	}
-
-	os.Args = []string{"articlebot", "topics", "--no-save"}
-	if shouldSaveTopics() {
-		t.Fatal("expected --no-save to disable saving")
-	}
-
-	os.Args = []string{"articlebot", "topics", "--save", "Platform Engineering", "Kubernetes"}
-	if !shouldSaveTopics() {
-		t.Fatal("expected --save to remain enabled when domain args are present")
-	}
-	if got := filterTopicDomains(os.Args[2:]); !reflect.DeepEqual(got, []string{"Platform Engineering", "Kubernetes"}) {
-		t.Fatalf("filterTopicDomains() = %#v, want %#v", got, []string{"Platform Engineering", "Kubernetes"})
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package generator
 
 import (
 	"fmt"
@@ -59,7 +59,7 @@ func (ag *ArticleGenerator) generateArticleWithAI(provider Provider, topic Topic
 		content += continuation
 	}
 	// Add Hugo front matter
-	return NewFrontMatter(topic, content, !ag.config.AutoPublish), nil
+	return NewFrontMatter(topic, content, !ag.config.AutoPublish, ag.now()), nil
 }
 
 // isArticleIncomplete checks if an article appears to be cut off or incomplete

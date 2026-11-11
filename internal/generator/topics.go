@@ -1,4 +1,4 @@
-package main
+package generator
 
 import (
 	"encoding/json"
@@ -24,11 +24,11 @@ type Topic struct {
 	Description string   `json:"description"`
 }
 
-// generateTopicsWithAI uses AI to generate new article topics
-func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount int) error {
+// GenerateTopics generates and validates topics without saving them or prompting.
+func (ag *ArticleGenerator) GenerateTopics(domains []string, topicCount int) ([]Topic, error) {
 	assignedDomains, err := selectTopicDomains(domains, topicCount)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Println("🎨 Generating new article topics with AI...")
@@ -42,14 +42,14 @@ func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount in
 	// Build the prompt for topic generation
 	prompt := ag.buildTopicGenerationPrompt(assignedDomains)
 
-	aiAgent, err := ag.config.Provider(provider)
+	aiAgent, err := ag.newProvider(provider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	response, err := aiAgent.Call(topicGenerationSystemPrompt, prompt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse the JSON response
@@ -61,36 +61,15 @@ func (ag *ArticleGenerator) generateTopicsWithAI(domains []string, topicCount in
 		// Try to extract JSON from markdown code blocks
 		response = extractJSONFromMarkdown(response)
 		if err := json.Unmarshal([]byte(response), &generatedTopics); err != nil {
-			return fmt.Errorf("failed to parse topics JSON: %w\nResponse: %s", err, response)
+			return nil, fmt.Errorf("failed to parse topics JSON: %w\nResponse: %s", err, response)
 		}
 	}
 
 	if err := validateTopicAssignments(generatedTopics.Topics, assignedDomains); err != nil {
-		return err
+		return nil, err
 	}
 
-	log.Printf("✅ Generated %d new topics!", len(generatedTopics.Topics))
-	log.Println("")
-
-	// Display generated topics
-	for i, topic := range generatedTopics.Topics {
-		log.Printf("%d. %s", i+1, topic.Title)
-		log.Printf("   Category: %s | Difficulty: %s", topic.Category, topic.Difficulty)
-		log.Printf("   Keywords: %s", strings.Join(topic.Keywords, ", "))
-		log.Println("")
-	}
-
-	if shouldSaveTopics() {
-		if err := ag.saveGeneratedTopics(generatedTopics.Topics); err != nil {
-			return fmt.Errorf("failed to save topics: %w", err)
-		}
-		log.Println("✅ Topics saved to topics.json")
-		log.Println("💡 You can manually merge them into your code or use them as inspiration!")
-	} else {
-		log.Println("❌ Topics not saved")
-	}
-
-	return nil
+	return generatedTopics.Topics, nil
 }
 
 func (ag *ArticleGenerator) loadTopics() ([]Topic, error) {
@@ -101,7 +80,7 @@ func (ag *ArticleGenerator) loadTopics() ([]Topic, error) {
 	}
 
 	// Try to load existing file
-	data, err := os.ReadFile(TopicsFilename)
+	data, err := os.ReadFile(ag.paths.Topics)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +93,8 @@ func (ag *ArticleGenerator) loadTopics() ([]Topic, error) {
 	return allTopics.Topics, nil
 }
 
-// saveGeneratedTopics saves generated topics to a JSON file
-func (ag *ArticleGenerator) saveGeneratedTopics(topics []Topic) error {
+// SaveTopics appends topics to the configured topics file.
+func (ag *ArticleGenerator) SaveTopics(topics []Topic) error {
 	// Load existing topics if they exist
 	var allTopics struct {
 		GeneratedAt time.Time `json:"generated_at"`
@@ -125,10 +104,12 @@ func (ag *ArticleGenerator) saveGeneratedTopics(topics []Topic) error {
 	oldTopics, err := ag.loadTopics()
 	if err == nil {
 		allTopics.Topics = oldTopics
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("load existing topics: %w", err)
 	}
 
 	// Append new topics
-	allTopics.GeneratedAt = time.Now()
+	allTopics.GeneratedAt = ag.now()
 	allTopics.Topics = append(allTopics.Topics, topics...)
 
 	// Save to file
@@ -137,7 +118,7 @@ func (ag *ArticleGenerator) saveGeneratedTopics(topics []Topic) error {
 		return err
 	}
 
-	return os.WriteFile(TopicsFilename, data, 0644)
+	return os.WriteFile(ag.paths.Topics, data, 0644)
 }
 
 func selectTopicDomains(domains []string, count int) ([]string, error) {
@@ -227,7 +208,7 @@ Requirements:
 Generate exactly %d diverse and innovative topics now, preserving the assigned categories and order:`,
 		len(assignedDomains),
 		assignments.String(),
-		time.Now().Year(),
+		ag.now().Year(),
 		len(assignedDomains),
 	)
 }
@@ -255,49 +236,4 @@ func extractJSONFromMarkdown(text string) string {
 	}
 
 	return text
-}
-
-func filterTopicDomains(args []string) []string {
-	filtered := make([]string, 0, len(args))
-	for _, arg := range args {
-		switch strings.ToLower(arg) {
-		case "--save", "--no-save", "--dry-run":
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			continue
-		}
-		if strings.TrimSpace(arg) == "" {
-			continue
-		}
-		filtered = append(filtered, arg)
-	}
-	return filtered
-}
-
-func shouldSaveTopics() bool {
-	args := os.Args[2:]
-	for _, arg := range args {
-		switch strings.ToLower(arg) {
-		case "--save":
-			return true
-		case "--no-save", "--dry-run":
-			return false
-		}
-	}
-
-	if fileInfo, err := os.Stdin.Stat(); err == nil && (fileInfo.Mode()&os.ModeCharDevice) == 0 {
-		// In non-interactive contexts, default to saving instead of silently discarding
-		// generated topics. This keeps automation predictable while still honoring
-		// explicit --no-save/--dry-run overrides.
-		return true
-	}
-
-	log.Println("💾 Save these topics to topics.json? (y/n)")
-	var answer string
-	if _, err := fmt.Scanln(&answer); err != nil {
-		return false
-	}
-
-	return strings.ToLower(answer) == "y" || strings.ToLower(answer) == "yes"
 }

@@ -7,34 +7,28 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ubogdan/articlebot/internal/generator"
 	"github.com/ubogdan/articlebot/internal/providers"
 )
 
 func TestGenerateTitle(t *testing.T) {
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldDir); err != nil {
-			t.Error(err)
-		}
-	})
-	t.Setenv(EnvOllamaHost, "")
-	t.Setenv(EnvOllamaModel, "")
-	target := Topic{
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	topicsPath := filepath.Join(dir, "topics.json")
+	outputDir := filepath.Join(dir, "posts")
+	now := time.Date(2030, 1, 2, 23, 59, 59, 0, time.UTC)
+	target := generator.Topic{
 		Title: "Reliable incident response", Category: "SRE",
 		Keywords:   []string{"incident-response", "reliability"},
 		Difficulty: "Advanced", Description: "Build reliable response workflows.",
 	}
 	data, err := json.Marshal(map[string]interface{}{
-		"topics": []Topic{{Title: "Unrelated topic", Category: "Go Development"}, target},
+		"topics": []generator.Topic{{Title: "Unrelated topic", Category: "Go Development"}, target},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -72,17 +66,17 @@ func TestGenerateTitle(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	cfg := getDefaultConfig()
+	cfg := generator.DefaultConfig()
 	cfg.AIProvider = "claude"
 	cfg.ClaudeAPIKey = ""
 	cfg.OllamaHost = server.URL
 	cfg.GenerationInterval = 8
-	cfg.OutputDir = "posts"
+	cfg.OutputDir = "unused-configured-output"
 	configData, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ConfigFilename, configData, 0600); err != nil {
+	if err := os.WriteFile(configPath, configData, 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -99,22 +93,29 @@ func TestGenerateTitle(t *testing.T) {
 		{name: "case sensitive", args: []string{"--title", strings.ToLower(target.Title)}, topics: data, wantErr: "not found"},
 		{name: "empty title", args: []string{"--title", " "}, topics: data, wantErr: "--title must not be empty"},
 		{name: "count conflict", args: []string{"--title", target.Title, "2"}, topics: data, wantErr: "cannot be combined"},
-		{name: "missing file", args: []string{"--title", target.Title}, missingFile: true, wantErr: "load topics.json"},
-		{name: "invalid file", args: []string{"--title", target.Title}, topics: []byte("{"), wantErr: "load topics.json"},
+		{name: "missing file", args: []string{"--title", target.Title}, missingFile: true, wantErr: "load " + topicsPath},
+		{name: "invalid file", args: []string{"--title", target.Title}, topics: []byte("{"), wantErr: "load " + topicsPath},
 		{name: "provider failure", args: []string{"--title", target.Title}, topics: data, fail: true, wantCall: true, wantErr: "generate article"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.missingFile {
-				if err := os.Remove(TopicsFilename); err != nil {
+				if err := os.Remove(topicsPath); err != nil {
 					t.Fatal(err)
 				}
-			} else if err := os.WriteFile(TopicsFilename, tt.topics, 0600); err != nil {
+			} else if err := os.WriteFile(topicsPath, tt.topics, 0600); err != nil {
 				t.Fatal(err)
 			}
 			before := calls
 			failProvider = tt.fail
 			args := append([]string{"articlebot", "--provider", "ollama", "generate"}, tt.args...)
-			err := newApp().Run(args)
+			err := newApp(appOptions{
+				configPath: configPath,
+				getenv:     func(string) string { return "" },
+				generator: generator.Options{
+					Paths: generator.Paths{Topics: topicsPath, OutputDir: outputDir},
+					Now:   func() time.Time { return now },
+				},
+			}).Run(args)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)
@@ -130,7 +131,7 @@ func TestGenerateTitle(t *testing.T) {
 				t.Fatalf("provider calls = %d, want %d", calls-before, wantCalls)
 			}
 			if !tt.missingFile {
-				saved, err := os.ReadFile(TopicsFilename)
+				saved, err := os.ReadFile(topicsPath)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -139,7 +140,7 @@ func TestGenerateTitle(t *testing.T) {
 				}
 			}
 			if tt.wantErr == "" {
-				files, err := filepath.Glob(filepath.Join(cfg.OutputDir, "*.md"))
+				files, err := filepath.Glob(filepath.Join(outputDir, "*.md"))
 				if err != nil || len(files) != 1 {
 					t.Fatalf("output files = %v, error = %v", files, err)
 				}
@@ -148,13 +149,17 @@ func TestGenerateTitle(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, want := range []string{
-					"title: " + quoteYAMLString(target.Title),
+					"title: " + strconv.Quote(target.Title),
+					"date: 2030-01-02T23:59:59Z",
 					"categories: [\"SRE\"]", "draft: true", target.Description,
 					"incident-response", "## Conclusion",
 				} {
 					if !strings.Contains(string(content), want) {
 						t.Errorf("saved article missing %q", want)
 					}
+				}
+				if filepath.Base(files[0]) != "2030-01-02-reliable-incident-response.md" {
+					t.Fatalf("unexpected output filename %s", files[0])
 				}
 			}
 		})

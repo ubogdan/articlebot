@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+const maxArticleContinuations = 3
 
 // generateArticleWithAI generates an article using the specified AI provider
 func (ag *ArticleGenerator) generateArticleWithAI(provider Provider, topic Topic) (*HugoFrontMatter, error) {
@@ -15,23 +19,44 @@ func (ag *ArticleGenerator) generateArticleWithAI(provider Provider, topic Topic
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("AI provider returned empty article content")
+	}
 
-	for {
-		if !ag.isArticleIncomplete(content) {
+	for attempts := 0; ; attempts++ {
+		reason := articleIncompleteReason(content)
+		if reason == "" {
 			log.Printf("✅ Article appears complete")
 			break
 		}
+		if attempts >= maxArticleContinuations {
+			return nil, fmt.Errorf("article still incomplete after %d continuation attempts: %s", maxArticleContinuations, reason)
+		}
 
-		log.Println("   ⚠️  Article appears incomplete, requesting continuation...")
+		log.Printf("   ⚠️  Article appears incomplete (%s), requesting continuation...", reason)
 
 		continuation, err := ag.requestContinuation(provider, content)
 		if err != nil {
-			log.Printf("      ⚠️  Could not get continuation: %v", err)
-			break
+			return nil, fmt.Errorf("request article continuation: %w", err)
+		}
+		if strings.TrimSpace(continuation) == "" {
+			return nil, fmt.Errorf("AI provider returned empty article continuation")
+		}
+		if strings.Contains(content, strings.TrimSpace(continuation)) {
+			return nil, fmt.Errorf("article continuation repeated existing content")
 		}
 
 		log.Println("      ✅ Continuation received")
-		content = content + continuation
+		// Fences and headings must start on a new line, even when the API
+		// omits whitespace at the boundary between responses.
+		tail := strings.TrimSpace(content[strings.LastIndex(content, "\n")+1:])
+		next := strings.TrimSpace(continuation)
+		if !strings.HasSuffix(content, "\n") && !strings.HasPrefix(continuation, "\n") &&
+			(strings.HasPrefix(tail, "```") || strings.HasPrefix(tail, "~~~") ||
+				strings.HasPrefix(next, "#") || strings.HasPrefix(next, "```") || strings.HasPrefix(next, "~~~")) {
+			content += "\n"
+		}
+		content += continuation
 	}
 	// Add Hugo front matter
 	return NewFrontMatter(topic, content, !ag.config.AutoPublish), nil
@@ -39,12 +64,49 @@ func (ag *ArticleGenerator) generateArticleWithAI(provider Provider, topic Topic
 
 // isArticleIncomplete checks if an article appears to be cut off or incomplete
 func (ag *ArticleGenerator) isArticleIncomplete(content string) bool {
+	return articleIncompleteReason(content) != ""
+}
+
+func articleIncompleteReason(content string) string {
+	content = strings.TrimSpace(content)
 	if len(content) == 0 {
-		return true
+		return "empty article"
 	}
 
-	content = strings.TrimSpace(content)
-	lowerContent := strings.ToLower(content)
+	var fence byte
+	var fenceLength int
+	hasConclusion := false
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && (line[0] == '`' || line[0] == '~') {
+			length := len(line) - len(strings.TrimLeft(line, line[:1]))
+			if length >= 3 {
+				if fence == 0 {
+					// Backticks cannot occur in a backtick fence's info string.
+					if line[0] != '`' || !strings.Contains(line[length:], "`") {
+						fence, fenceLength = line[0], length
+					}
+				} else if line[0] == fence && length >= fenceLength && strings.TrimSpace(line[length:]) == "" {
+					fence, fenceLength = 0, 0
+				}
+				continue
+			}
+		}
+		if fence == 0 {
+			heading := strings.TrimLeft(line, "#")
+			if len(heading) != len(line) && strings.HasPrefix(heading, " ") {
+				heading = strings.ToLower(strings.TrimSpace(heading))
+				for _, conclusion := range []string{"conclusion", "summary", "wrapping up", "final thoughts", "key takeaways"} {
+					if strings.HasPrefix(heading, conclusion) {
+						hasConclusion = true
+					}
+				}
+			}
+		}
+	}
+	if fence != 0 {
+		return fmt.Sprintf("unclosed %s code fence", strings.Repeat(string(fence), fenceLength))
+	}
 
 	// Check for explicit truncation indicators
 	truncationIndicators := []string{
@@ -58,98 +120,67 @@ func (ag *ArticleGenerator) isArticleIncomplete(content string) bool {
 		"work in progress",
 	}
 
+	lastLines := strings.Split(content, "\n")
+	lastNonEmptyLine := strings.TrimSpace(lastLines[len(lastLines)-1])
 	for _, indicator := range truncationIndicators {
-		if strings.Contains(lowerContent, strings.ToLower(indicator)) {
-			return true
+		if strings.Contains(strings.ToLower(lastNonEmptyLine), indicator) {
+			return "truncation marker at end"
 		}
 	}
-
-	// Check for required conclusion sections
-	hasConclusion := strings.Contains(lowerContent, "## conclusion") ||
-		strings.Contains(lowerContent, "## summary") ||
-		strings.Contains(lowerContent, "## wrapping up") ||
-		strings.Contains(lowerContent, "## final thoughts") ||
-		strings.Contains(lowerContent, "## key takeaways")
 
 	// Count words to estimate article completeness
 	wordCount := len(strings.Fields(content))
 
 	// If no conclusion section found and word count is low, likely incomplete
 	if !hasConclusion && wordCount < 1200 {
-		return true
-	}
-
-	// Check if article ends abruptly - must end with proper punctuation
-	lastChar := rune(content[len(content)-1])
-	validEndChars := map[rune]bool{
-		'.': true, '!': true, '?': true, // Sentence endings
-		')': true, '"': true, '`': true, // Closing punctuation
-		']': true, '}': true, // Bracket endings
-		'\n': true, // Newline (for multiple paragraphs at end)
-	}
-
-	if !validEndChars[lastChar] {
-		// Check if it ends with a partial code block or list
-		lastLines := strings.Split(content, "\n")
-		if len(lastLines) > 0 {
-			lastLine := strings.TrimSpace(lastLines[len(lastLines)-1])
-			// If last line is short and doesn't look like code/list continuation, it's incomplete
-			if len(lastLine) > 20 && !strings.HasPrefix(lastLine, "-") &&
-				!strings.HasPrefix(lastLine, "*") && !strings.HasPrefix(lastLine, "```") &&
-				!strings.Contains(lastLine, "http") {
-				return true
-			}
-		}
-	}
-
-	// Check for incomplete code blocks (unclosed fences)
-	codeBlockCount := strings.Count(lowerContent, "```")
-	if codeBlockCount%2 != 0 {
-		return true
+		return "fewer than 1200 words and no conclusion heading"
 	}
 
 	// Check if article ends with a heading without content
-	lastLines := strings.Split(strings.TrimSpace(content), "\n")
-	for i := len(lastLines) - 1; i >= len(lastLines)-3 && i >= 0; i-- {
-		line := strings.TrimSpace(lastLines[i])
-		if strings.HasPrefix(line, "#") && len(lastLines)-1-i < 2 {
-			// Heading without following content
-			return true
-		}
+	if strings.HasPrefix(lastNonEmptyLine, "#") {
+		return "heading without content at end"
 	}
 
+	ending := strings.TrimRight(lastNonEmptyLine, "*_~")
 	// Check for incomplete list or bullet points at end
-	lastNonEmptyLine := ""
-	for i := len(lastLines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lastLines[i])
-		if line != "" {
-			lastNonEmptyLine = line
-			break
-		}
-	}
-
 	if lastNonEmptyLine != "" && (strings.HasPrefix(lastNonEmptyLine, "-") ||
 		strings.HasPrefix(lastNonEmptyLine, "*")) {
 		// Article ends with list item, check if it looks complete
-		if strings.HasSuffix(lastNonEmptyLine, ",") || strings.HasSuffix(lastNonEmptyLine, ":") {
-			return true
+		if strings.HasSuffix(ending, ",") || strings.HasSuffix(ending, ":") {
+			return "unfinished list item at end"
 		}
 	}
 
-	return false
+	lastChar, _ := utf8.DecodeLastRuneInString(ending)
+	validEnd := strings.ContainsRune(".!?)]}`\"'|", lastChar) ||
+		unicode.Is(unicode.Pe, lastChar) || unicode.Is(unicode.Pf, lastChar)
+	if !validEnd && len(ending) > 20 &&
+		!strings.HasPrefix(lastNonEmptyLine, "-") &&
+		!strings.HasPrefix(lastNonEmptyLine, "*") &&
+		!strings.HasPrefix(lastNonEmptyLine, "```") &&
+		!strings.HasPrefix(lastNonEmptyLine, "~~~") &&
+		!strings.Contains(lastNonEmptyLine, "http") {
+		return "unfinished final sentence"
+	}
+
+	return ""
 }
 
 // requestContinuation requests the AI to continue an incomplete article
 func (ag *ArticleGenerator) requestContinuation(provider Provider, existingContent string) (string, error) {
-	continuationPrompt := `The previous article content was cut off. Please continue from where it stopped and complete the article. 
+	continuationPrompt := fmt.Sprintf(`The previous article content appears incomplete: %s.
+Please continue from where it stopped and complete the article.
 
-Include:
-- Any remaining sections that were not completed
-- The Conclusion section with key takeaways
+Return ONLY the missing remainder, not a rewritten article or an explanation.
+Do not repeat existing sections or add a new Conclusion if one already exists.
+If the article ends inside a code fence, continue that code and close the
+existing fence before writing prose. Do not open a replacement fence.
+Include any remaining required sections, including a Conclusion with key
+takeaways if it is missing. Finish the article in this response.
 
 Continue the article now (pick up exactly where the previous content ended):
 
-`
+`, articleIncompleteReason(existingContent))
 
 	var continuation string
 	var err error
@@ -229,7 +260,7 @@ Requirements:
    - NO YAML front matter (I'll add it separately)
 
 5. IMPORTANT: Write the ENTIRE article in one response. Do NOT truncate or summarize. 
-   Complete ALL sections fully. The article should be 1500-2500 words.
+   Complete ALL sections fully within the 1200-2000 word budget.
 
 Start writing the complete article now (without YAML front matter):`,
 		topic.Title,

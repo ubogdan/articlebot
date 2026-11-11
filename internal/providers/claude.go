@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -127,7 +128,16 @@ func (ai *ClaudeAI) Call(prompt, message string) (string, error) {
 		claudeResp.Usage.OutputTokens,
 		claudeResp.Usage.InputTokens+claudeResp.Usage.OutputTokens)
 
-	return claudeResp.Content[0].Text, nil
+	var text strings.Builder
+	for _, block := range claudeResp.Content {
+		if block.Type == "text" {
+			text.WriteString(block.Text)
+		}
+	}
+	if strings.TrimSpace(text.String()) == "" {
+		return "", fmt.Errorf("no text content in Claude response")
+	}
+	return text.String(), nil
 }
 
 // isNewerClaudeModel checks if the model is newer than claude-3-5-sonnet-20241022

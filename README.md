@@ -53,6 +53,13 @@ generation and Hugo output flow. It cannot be combined with an article count.
 A missing title or unreadable topics file produces an error; no random topic is
 substituted. Without `--title`, random topic selection is unchanged.
 
+Article generation requests at most three continuations for incomplete content.
+Empty or repeated continuations, provider failures, and content still incomplete
+after that limit produce an error instead of saving an incomplete article.
+Continuation logs and errors include the completeness check that failed (for
+example, an unclosed code fence). The continuation prompt asks for only the
+missing remainder, preserving existing sections and completing open code fences.
+
 For Ollama, omitted `ollama_host` and `ollama_model` settings default to
 `http://localhost:11434` and `llama2`. Set them in `config.json`, or use
 `OLLAMA_HOST` and `OLLAMA_MODEL` to override them. The model must already be
